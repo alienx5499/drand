@@ -35,27 +35,46 @@ func TestKeysSaveLoad(t *testing.T) {
 	require.Equal(t, loadedKey.Public.Address(), ps[0].Public.Address())
 
 	_, err = os.Stat(store.privateKeyFile)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	_, err = os.Stat(store.publicKeyFile)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// test group
-	require.Nil(t, store.SaveGroup(group))
+	require.NoError(t, store.SaveGroup(group))
 	loadedGroup, err := store.LoadGroup()
 	require.NoError(t, err)
 	require.Equal(t, group.Threshold, loadedGroup.Threshold)
+	require.Equal(t, commonutils.GetCanonicalBeaconID(group.ID), loadedGroup.ID, "group id must round-trip (canonical default when empty)")
+	require.Equal(t, group.Period, loadedGroup.Period)
+	require.Equal(t, group.CatchupPeriod, loadedGroup.CatchupPeriod)
+	require.Equal(t, group.GenesisTime, loadedGroup.GenesisTime)
+	require.Equal(t, group.TransitionTime, loadedGroup.TransitionTime)
+	require.Equal(t, group.Scheme.Name, loadedGroup.Scheme.Name, "scheme must round-trip")
+	require.NotNil(t, group.PublicKey)
+	require.NotNil(t, loadedGroup.PublicKey)
+	require.True(t, group.PublicKey.Equal(loadedGroup.PublicKey), "distributed public key must round-trip")
 
-	// TODO remove that ordering thing it's useless
-	for _, lid := range loadedGroup.Nodes {
-		var found bool
-		for _, k := range ps {
-			if lid.Addr != k.Public.Addr {
-				continue
-			}
-			found = true
-			require.Equal(t, k.Public.Key.String(), lid.Key.String(), "public key should hold")
-		}
-		require.True(t, found, "not found key ", lid.Addr)
+	// Compare nodes by address only; order in loadedGroup.Nodes must not matter.
+	// Use the saved group as source of truth so we assert full Node equality (index + identity).
+	expectedByAddr := make(map[string]*Node, len(group.Nodes))
+	for _, node := range group.Nodes {
+		expectedByAddr[node.Addr] = node
+	}
+	loadedByAddr := make(map[string]*Node, len(loadedGroup.Nodes))
+	for _, n := range loadedGroup.Nodes {
+		_, dup := loadedByAddr[n.Addr]
+		require.False(t, dup, "duplicate address in loaded group: %s", n.Addr)
+		loadedByAddr[n.Addr] = n
+	}
+	require.Len(t, loadedGroup.Nodes, len(expectedByAddr))
+	require.Len(t, loadedByAddr, len(expectedByAddr), "same node count and no duplicate addresses")
+	for addr, exp := range expectedByAddr {
+		ln, ok := loadedByAddr[addr]
+		require.True(t, ok, "missing node for address %s", addr)
+		// Explicit checks (same contract as Node.Equal: index + identity Addr + key)
+		require.Equal(t, addr, ln.Addr)
+		require.Equal(t, exp.Index, ln.Index)
+		require.True(t, exp.Key.Equal(ln.Key), "public key mismatch for %s", addr)
 	}
 
 	// test share / dist key
@@ -66,12 +85,17 @@ func TestKeysSaveLoad(t *testing.T) {
 		},
 		Scheme: group.Scheme,
 	}
-	require.Nil(t, store.SaveShare(testShare))
+	require.NoError(t, store.SaveShare(testShare))
 	loadedShare, err := store.LoadShare()
 
 	require.NoError(t, err)
+	require.Equal(t, testShare.Scheme.Name, loadedShare.Scheme.Name)
 	require.Equal(t, testShare.Share.V, loadedShare.Share.V)
 	require.Equal(t, testShare.Share.I, loadedShare.Share.I)
+	require.Len(t, loadedShare.Commits, len(testShare.Commits))
+	for i := range testShare.Commits {
+		require.True(t, testShare.Commits[i].Equal(loadedShare.Commits[i]), "commit %d", i)
+	}
 }
 
 func TestTwoStores(t *testing.T) {
