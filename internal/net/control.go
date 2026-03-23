@@ -308,11 +308,6 @@ func (c *ControlClient) StartFollowChain(cc context.Context,
 	outCh = make(chan *proto.SyncProgress, progressSyncQueue)
 	errCh = make(chan error, 1)
 	go func() {
-		defer func() {
-			close(outCh)
-			close(errCh)
-		}()
-
 		for {
 			resp, err := stream.Recv()
 			if err != nil {
@@ -321,11 +316,15 @@ func (c *ControlClient) StartFollowChain(cc context.Context,
 				case errCh <- err:
 				default:
 				}
+				close(outCh)
+				close(errCh)
 				return
 			}
 			select {
 			case outCh <- resp:
 			case <-cc.Done():
+				close(outCh)
+				close(errCh)
 				return
 			}
 		}
