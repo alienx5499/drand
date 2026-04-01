@@ -311,11 +311,7 @@ func (c *ControlClient) StartFollowChain(cc context.Context,
 		for {
 			resp, err := stream.Recv()
 			if err != nil {
-				// Avoid leaking this goroutine if the caller isn't reading errors.
-				select {
-				case errCh <- err:
-				default:
-				}
+				errCh <- err
 				close(outCh)
 				close(errCh)
 				return
