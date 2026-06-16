@@ -306,22 +306,21 @@ func (c *ControlClient) StartFollowChain(cc context.Context,
 		return nil, nil, err
 	}
 	outCh = make(chan *proto.SyncProgress, progressSyncQueue)
-	// TODO: currently if the remote node terminates during the follow, it won't close the client side process
 	errCh = make(chan error, 1)
 	go func() {
 		for {
 			resp, err := stream.Recv()
 			if err != nil {
 				errCh <- err
-				close(errCh)
 				close(outCh)
+				close(errCh)
 				return
 			}
 			select {
 			case outCh <- resp:
 			case <-cc.Done():
-				close(errCh)
 				close(outCh)
+				close(errCh)
 				return
 			}
 		}
