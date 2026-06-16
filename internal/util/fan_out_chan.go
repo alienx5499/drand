@@ -4,47 +4,30 @@ import (
 	"sync"
 )
 
-// MaxDKGsInFlight is an arbitrary limit set for the number of DKGs in flight to avoid
+// MaxMsgsInFlight is an arbitrary limit set for the number of messages in flight to avoid
 // overallocating channel capacity for the fanout channel
-const MaxDKGsInFlight = 20
+const MaxMsgsInFlight = 20
 
-// FanOutChan has one producer channel and multiple consumers for each message on the channel
+// FanOutChan has one producer and multiple consumers: each message sent is
+// delivered to every listener via a non-blocking send.
 type FanOutChan[T any] struct {
 	lock      sync.RWMutex
-	delegate  chan T
 	listeners []chan T
+	closed    bool
 }
 
 func NewFanOutChan[T any]() *FanOutChan[T] {
-	f := &FanOutChan[T]{
-		delegate:  make(chan T, MaxDKGsInFlight),
+	return &FanOutChan[T]{
 		listeners: make([]chan T, 0),
 	}
-
-	go func() {
-		for item := range f.delegate {
-			f.lock.RLock()
-			for _, l := range f.listeners {
-				// non blocking send
-				// keep RLock to avoid send vs close races.
-				select {
-				case l <- item:
-				default:
-				}
-			}
-			f.lock.RUnlock()
-		}
-	}()
-
-	return f
 }
 
 func (f *FanOutChan[T]) Listen() chan T {
-	ch := make(chan T, MaxDKGsInFlight)
+	ch := make(chan T, MaxMsgsInFlight)
 
 	f.lock.Lock()
 	f.listeners = append(f.listeners, ch)
-	defer f.lock.Unlock()
+	f.lock.Unlock()
 	return ch
 }
 
@@ -60,14 +43,30 @@ func (f *FanOutChan[T]) StopListening(ch chan T) {
 	}
 }
 
-func (f *FanOutChan[T]) Chan() chan T {
-	return f.delegate
+// Send fans out item to all listeners using non-blocking sends.
+// Returns false if the channel has been closed.
+func (f *FanOutChan[T]) Send(item T) bool {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+	if f.closed {
+		return false
+	}
+	for _, l := range f.listeners {
+		select {
+		case l <- item:
+		default:
+		}
+	}
+	return true
 }
 
 func (f *FanOutChan[T]) Close() {
 	f.lock.Lock()
 	defer f.lock.Unlock()
-	close(f.delegate)
+	if f.closed {
+		return
+	}
+	f.closed = true
 	for _, l := range f.listeners {
 		close(l)
 	}

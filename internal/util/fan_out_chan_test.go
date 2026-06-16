@@ -9,18 +9,17 @@ func TestFanOutChan_NonBlockingSend(t *testing.T) {
 	f := NewFanOutChan[int]()
 	defer f.Close()
 
-	// Create a listener with small buffer
 	listener := f.Listen()
 
 	// Fill the listener channel to capacity
-	for i := 0; i < MaxDKGsInFlight; i++ {
+	for i := 0; i < MaxMsgsInFlight; i++ {
 		listener <- i
 	}
 
 	// Send a message - should not block even though listener is full
 	done := make(chan bool)
 	go func() {
-		f.Chan() <- 999
+		f.Send(999)
 		done <- true
 	}()
 
@@ -32,37 +31,53 @@ func TestFanOutChan_NonBlockingSend(t *testing.T) {
 	}
 }
 
-func TestFanOutChan_CloseStopsGoroutine(t *testing.T) {
+func TestFanOutChan_CloseAndSend(t *testing.T) {
 	f := NewFanOutChan[int]()
 
-	// Create a listener
 	listener := f.Listen()
 
-	// Send a message before closing
-	f.Chan() <- 1
+	if !f.Send(1) {
+		t.Fatal("Send should succeed before Close")
+	}
+
+	f.Close()
+
+	if f.Send(2) {
+		t.Fatal("Send should fail after Close")
+	}
+
+	// First receive should yield the value sent before Close
+	select {
+	case num, ok := <-listener:
+		if !ok {
+			t.Fatal("expected to receive the buffered value")
+		}
+		if num != 1 {
+			t.Fatalf("expected 1, got %d", num)
+		}
+	default:
+		t.Fatal("expected a buffered value")
+	}
+
+	// Second receive should see a closed channel
+	select {
+	case _, ok := <-listener:
+		if ok {
+			t.Fatal("listener channel should be closed")
+		}
+	default:
+		t.Fatal("listener channel should be closed, not empty")
+	}
+}
+
+func TestFanOutChan_SendRespectsClosedChan(t *testing.T) {
+	f := NewFanOutChan[int]()
 
 	// Close the fanout - this should close delegate and all listeners
 	f.Close()
 
-	// Verify delegate channel is closed (send should panic)
-	func() {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Fatal("Expected panic when sending to closed delegate channel")
-			}
-		}()
-		f.Chan() <- 2
-	}()
-
-	// Verify listener is closed
-	select {
-	case _, ok := <-listener:
-		if ok {
-			t.Fatal("Listener channel should be closed")
-		}
-		// Channel is closed, which is expected
-	default:
-		t.Fatal("Listener channel should be closed and empty")
+	if f.Send(1) {
+		t.Fatal("Listener channel should be closed and Send should not send")
 	}
 }
 
@@ -74,7 +89,7 @@ func TestFanOutChan_MultipleListeners(t *testing.T) {
 	listener2 := f.Listen()
 
 	// Send a message
-	f.Chan() <- "test"
+	f.Send("test")
 
 	// Both listeners should receive it
 	select {
