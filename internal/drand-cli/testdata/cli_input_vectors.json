@@ -1,0 +1,83 @@
+[
+  {
+    "name": "reset_without_state_returns_error",
+    "args": [
+      "drand",
+      "util",
+      "reset",
+      "--folder",
+      "{{SB_TMP}}",
+      "--id",
+      "{{BEACON_ID}}"
+    ],
+    "expect_error": true
+  },
+  {
+    "name": "del_beacon_with_round_on_empty_state_returns_error",
+    "args": [
+      "drand",
+      "util",
+      "del-beacon",
+      "--folder",
+      "{{SB_TMP}}",
+      "--id",
+      "{{BEACON_ID}}",
+      "3"
+    ],
+    "expect_error": true
+  },
+  {
+    "name": "self_sign_without_state_returns_error",
+    "args": [
+      "drand",
+      "util",
+      "self-sign",
+      "--folder",
+      "{{SB_TMP}}",
+      "--id",
+      "{{BEACON_ID}}"
+    ],
+    "expect_error": true
+  },
+  {
+    "name": "generate_keypair_on_sb_structure_returns_error",
+    "args": [
+      "drand",
+      "generate-keypair",
+      "--folder",
+      "{{SB_TMP}}",
+      "--id",
+      "{{BEACON_ID}}",
+      "127.0.0.1:8081"
+    ],
+    "expect_error": true
+  },
+  {
+    "name": "generate_keypair_with_default_prompted_port_succeeds",
+    "args": [
+      "drand",
+      "generate-keypair",
+      "--folder",
+      "{{TMP}}",
+      "--id",
+      "{{BEACON_ID}}",
+      "127.0.0.1"
+    ],
+    "stdin": "\n",
+    "expect_error": false
+  },
+  {
+    "name": "generate_keypair_with_selected_prompted_port_succeeds",
+    "args": [
+      "drand",
+      "generate-keypair",
+      "--folder",
+      "{{TMP}}",
+      "--id",
+      "{{BEACON_ID}}",
+      "127.0.0.1"
+    ],
+    "stdin": "8080\n",
+    "expect_error": false
+  }
+]
